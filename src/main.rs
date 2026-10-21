@@ -8,7 +8,7 @@ use std::{
         Arc, Mutex,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 /// A powerful, universal autoclicker for Linux (Wayland & X11).
@@ -44,9 +44,13 @@ struct Args {
     #[arg(long)]
     target: Option<String>,
 
-    /// Virtual action mode: 'click' (repeated clicking at interval) or 'hold' (hold button down)
+    /// Virtual action mode: 'click', 'hold' (continuous), or 'repeat-hold' (hold, pause, repeat)
     #[arg(short, long, default_value = "click")]
     mode: String,
+
+    /// Pause in milliseconds between repeated holds (only used with --mode repeat-hold)
+    #[arg(long, default_value_t = 1000)]
+    pause: u64,
 
     /// Virtual hold flag (shorthand for --mode hold)
     #[arg(long, default_value_t = false)]
@@ -69,6 +73,7 @@ enum TargetKind {
 enum ActionMode {
     Click,
     Hold,
+    RepeatHold,
 }
 
 struct ResolvedTarget {
@@ -288,8 +293,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         TriggerMode::Toggle
     };
 
-    let action_mode = if args.hold || args.mode.to_lowercase() == "hold" {
+    let action_mode = if args.hold || args.mode.eq_ignore_ascii_case("hold") {
         ActionMode::Hold
+    } else if args.mode.eq_ignore_ascii_case("repeat-hold")
+        || args.mode.eq_ignore_ascii_case("repeat_hold")
+        || args.mode.eq_ignore_ascii_case("repeat")
+    {
+        ActionMode::RepeatHold
     } else {
         ActionMode::Click
     };
@@ -306,7 +316,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         target.kind, target.name
     );
     println!("Action Mode        : {:?}", action_mode);
-    println!("Autoclick Speed    : {}ms interval", args.interval);
+    match action_mode {
+        ActionMode::Click => println!("Autoclick Speed    : {}ms interval", args.interval),
+        ActionMode::Hold => println!("Hold Mode          : continuous until stopped"),
+        ActionMode::RepeatHold => println!(
+            "Repeated Hold      : hold {}ms, pause {}ms, repeat",
+            args.interval, args.pause
+        ),
+    }
 
     match trigger_mode {
         TriggerMode::Hold => {
@@ -437,7 +454,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- Action Loop (Main Thread) ---
     let click_interval = Duration::from_millis(args.interval.max(1));
     let press_duration = Duration::from_millis(5.min(args.interval.max(2) / 2));
+    let pause_duration = Duration::from_millis(args.pause);
     let mut is_pressed = false;
+    let mut next_repeat_transition: Option<Instant> = None;
 
     while running_loop.load(Ordering::Relaxed) {
         let enabled = *clicking_enabled.lock().unwrap();
@@ -460,6 +479,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     is_pressed = false;
                 }
                 thread::sleep(Duration::from_millis(10));
+            }
+            ActionMode::RepeatHold => {
+                let now = Instant::now();
+
+                if !enabled {
+                    if is_pressed {
+                        let mut v_dev = virtual_device_loop.lock().unwrap();
+                        let _ = v_dev.emit(&[
+                            InputEvent::new(EventType::KEY.0, target.code.0, 0),
+                            InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0),
+                        ]);
+                        is_pressed = false;
+                    }
+                    // Restart with a fresh hold whenever activation begins again.
+                    next_repeat_transition = None;
+                    thread::sleep(Duration::from_millis(5));
+                    continue;
+                }
+
+                match next_repeat_transition {
+                    None => {
+                        let mut v_dev = virtual_device_loop.lock().unwrap();
+                        let _ = v_dev.emit(&[
+                            InputEvent::new(EventType::KEY.0, target.code.0, 1),
+                            InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0),
+                        ]);
+                        is_pressed = true;
+                        next_repeat_transition = Some(now + click_interval);
+                    }
+                    Some(deadline) if now >= deadline && is_pressed => {
+                        let mut v_dev = virtual_device_loop.lock().unwrap();
+                        let _ = v_dev.emit(&[
+                            InputEvent::new(EventType::KEY.0, target.code.0, 0),
+                            InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0),
+                        ]);
+                        is_pressed = false;
+                        next_repeat_transition = Some(now + pause_duration);
+                    }
+                    Some(deadline) if now >= deadline && !is_pressed => {
+                        let mut v_dev = virtual_device_loop.lock().unwrap();
+                        let _ = v_dev.emit(&[
+                            InputEvent::new(EventType::KEY.0, target.code.0, 1),
+                            InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0),
+                        ]);
+                        is_pressed = true;
+                        next_repeat_transition = Some(now + click_interval);
+                    }
+                    _ => thread::sleep(Duration::from_millis(5)),
+                }
             }
             ActionMode::Click => {
                 if enabled {

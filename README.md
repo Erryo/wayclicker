@@ -25,9 +25,10 @@ GUI Created by: **YanamiRei**
 
 - **Universal Wayland & X11 Compatibility:** Uses Linux kernel `uinput` virtual input devices directly—no compositor plugins or screen protocol limitations.
 - **Arbitrary Delay / Interval Support:** Set intervals from 1ms up to 60,000ms+ in the GUI (via slider, text input, or quick presets).
-- **Click Mode & Hold Mode:**
+- **Click, Hold & Repeat-Hold Modes:**
   - **Click (Repeat):** Repeatedly pulses clicks or keystrokes at your designated interval.
   - **Hold (Continuous):** Presses down the mouse button or keyboard key and holds it continuously until toggled off.
+  - **Repeat-Hold:** Holds the target for the configured interval, releases it for a configurable pause, then repeats while active.
 - **Automate Mouse and Keyboard:**
   - Emulate mouse buttons: `Left`, `Middle`, `Right`, `Side` (Back), `Extra` (Forward).
   - Emulate keyboard keys: Letters (`A`-`Z`), Numbers (`0`-`9`), Function keys (`F1`-`F12`), Navigation, `Space`, `Enter`, `Tab`, `Esc`, etc.
@@ -141,7 +142,8 @@ sudo wayclicker [OPTIONS]
 *   `-b, --button <BTN>`: Target mouse button (`left`, `right`, `middle`, `side`, `extra`).
 *   `-k, --key <KEY>`: Target keyboard key (e.g. `G`, `F`, `Space`, `Enter`, `1`, `W`).
 *   `--target <TARGET>`: Target button or key name.
-*   `-m, --mode <MODE>`: Action mode: `click` (rapid pulse clicks) or `hold` (virtual button held down).
+*   `-m, --mode <MODE>`: Action mode: `click`, `hold` (continuous), or `repeat-hold` (hold, pause, repeat).
+*   `--pause <MS>`: Pause between holds in `repeat-hold` mode (Default: `1000`).
 
 #### Examples
 
@@ -183,6 +185,11 @@ sudo wayclicker --key G --interval 2500 --toggle-key F7
 **8. Hold down keyboard key 'F' continuously:**
 ```bash
 sudo wayclicker --key F --hold --toggle-key F8
+```
+
+**9. Hold left mouse button for 2 seconds, release for 1 second, and repeat:**
+```bash
+sudo wayclicker --mode repeat-hold --interval 2000 --pause 1000 --button left --toggle-key F8
 ```
 
 ---
