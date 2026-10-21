@@ -750,6 +750,8 @@ mod tests {
             target: None,
             mode: "click".to_string(),
             hold: false,
+            keys: None,
+            key_delay: 20,
         };
         let target_right = resolve_target(&args_right, "right").unwrap();
         assert_eq!(target_right.kind, TargetKind::Mouse);
@@ -766,6 +768,8 @@ mod tests {
             target: None,
             mode: "click".to_string(),
             hold: false,
+            keys: None,
+            key_delay: 20,
         };
         let target_key = resolve_target(&args_key, "F6").unwrap();
         assert_eq!(target_key.kind, TargetKind::Keyboard);
