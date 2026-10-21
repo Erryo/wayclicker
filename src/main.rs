@@ -687,6 +687,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_parse_sequence_targets() {
+        let targets = parse_sequence_targets("X, left, Z").unwrap();
+        assert_eq!(targets.len(), 3);
+        assert_eq!(targets[0].code, KeyCode::KEY_X);
+        assert_eq!(targets[1].code, KeyCode::BTN_LEFT);
+        assert_eq!(targets[2].code, KeyCode::KEY_Z);
+        assert!(parse_sequence_targets("X,unknown,Z").is_err());
+        assert!(parse_sequence_targets("X,,Z").is_err());
+    }
+
+    #[test]
     fn test_parse_mouse_button() {
         assert_eq!(parse_mouse_button("left"), Some(KeyCode::BTN_LEFT));
         assert_eq!(parse_mouse_button("right"), Some(KeyCode::BTN_RIGHT));
