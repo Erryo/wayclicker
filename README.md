@@ -25,10 +25,11 @@ GUI Created by: **YanamiRei**
 
 - **Universal Wayland & X11 Compatibility:** Uses Linux kernel `uinput` virtual input devices directly—no compositor plugins or screen protocol limitations.
 - **Arbitrary Delay / Interval Support:** Set intervals from 1ms up to 60,000ms+ in the GUI (via slider, text input, or quick presets).
-- **Click, Hold & Repeat-Hold Modes:**
+- **Click, Hold, Repeat-Hold & Sequence Modes:**
   - **Click (Repeat):** Repeatedly pulses clicks or keystrokes at your designated interval.
   - **Hold (Continuous):** Presses down the mouse button or keyboard key and holds it continuously until toggled off.
   - **Repeat-Hold:** Holds the target for the configured interval, releases it for a configurable pause, then repeats while active.
+  - **Sequence:** Presses a comma-separated list of keyboard keys and mouse buttons in order, then repeats the whole sequence while active.
 - **Automate Mouse and Keyboard:**
   - Emulate mouse buttons: `Left`, `Middle`, `Right`, `Side` (Back), `Extra` (Forward).
   - Emulate keyboard keys: Letters (`A`-`Z`), Numbers (`0`-`9`), Function keys (`F1`-`F12`), Navigation, `Space`, `Enter`, `Tab`, `Esc`, etc.
@@ -142,8 +143,10 @@ sudo wayclicker [OPTIONS]
 *   `-b, --button <BTN>`: Target mouse button (`left`, `right`, `middle`, `side`, `extra`).
 *   `-k, --key <KEY>`: Target keyboard key (e.g. `G`, `F`, `Space`, `Enter`, `1`, `W`).
 *   `--target <TARGET>`: Target button or key name.
-*   `-m, --mode <MODE>`: Action mode: `click`, `hold` (continuous), or `repeat-hold` (hold, pause, repeat).
+*   `-m, --mode <MODE>`: Action mode: `click`, `hold` (continuous), `repeat-hold` (hold, pause, repeat), or `sequence` (repeat a list of keys/buttons in order).
 *   `--pause <MS>`: Pause between holds in `repeat-hold` mode (Default: `1000`).
+*   `--keys <LIST>`: Comma-separated sequence of keyboard keys and mouse buttons, used with `--mode sequence` (e.g. `X,left,Z`).
+*   `--key-delay <MS>`: Delay after each sequence action, including between repetitions (Default: `20`). Each key/button is pressed briefly and released before the next action.
 
 #### Examples
 
@@ -190,6 +193,11 @@ sudo wayclicker --key F --hold --toggle-key F8
 **9. Hold left mouse button for 2 seconds, release for 1 second, and repeat:**
 ```bash
 sudo wayclicker --mode repeat-hold --interval 2000 --pause 1000 --button left --toggle-key F8
+```
+
+**10. Repeat a sequence of X, left mouse button, then Z, with 20ms between actions:**
+```bash
+sudo wayclicker --mode sequence --keys X,left,Z --key-delay 20 --toggle-key F8
 ```
 
 ---
