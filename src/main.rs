@@ -55,6 +55,14 @@ struct Args {
     /// Virtual hold flag (shorthand for --mode hold)
     #[arg(long, default_value_t = false)]
     hold: bool,
+
+    /// Comma-separated sequence of keys/buttons, e.g. X,left,Z (used with --mode sequence)
+    #[arg(long)]
+    keys: Option<String>,
+
+    /// Delay in milliseconds between sequence actions (default: 20)
+    #[arg(long, default_value_t = 20)]
+    key_delay: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,6 +82,7 @@ enum ActionMode {
     Click,
     Hold,
     RepeatHold,
+    Sequence,
 }
 
 struct ResolvedTarget {
@@ -255,6 +264,39 @@ fn resolve_target(args: &Args, toggle_str: &str) -> Result<ResolvedTarget, Strin
     })
 }
 
+fn parse_sequence_targets(keys: &str) -> Result<Vec<ResolvedTarget>, String> {
+    let mut targets = Vec::new();
+
+    for token in keys.split(',') {
+        let name = token.trim();
+        if name.is_empty() {
+            return Err("The --keys list contains an empty item. Use comma-separated names like X,left,Z.".to_string());
+        }
+
+        if let Some(code) = parse_mouse_button(name) {
+            targets.push(ResolvedTarget {
+                code,
+                name: name.to_string(),
+                kind: TargetKind::Mouse,
+            });
+        } else if let Some(code) = parse_keyboard_key(name) {
+            targets.push(ResolvedTarget {
+                code,
+                name: name.to_string(),
+                kind: TargetKind::Keyboard,
+            });
+        } else {
+            return Err(format!("Unsupported key/button '{}' in --keys. Use supported key names or mouse buttons such as left, right, or middle.", name));
+        }
+    }
+
+    if targets.is_empty() {
+        return Err("--keys must contain at least one key or mouse button.".to_string());
+    }
+
+    Ok(targets)
+}
+
 fn all_supported_keycodes() -> Vec<KeyCode> {
     vec![
         KeyCode::BTN_LEFT, KeyCode::BTN_RIGHT, KeyCode::BTN_MIDDLE,
@@ -300,8 +342,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || args.mode.eq_ignore_ascii_case("repeat")
     {
         ActionMode::RepeatHold
+    } else if args.mode.eq_ignore_ascii_case("sequence") {
+        ActionMode::Sequence
     } else {
         ActionMode::Click
+    };
+
+    let sequence_targets = if action_mode == ActionMode::Sequence {
+        let keys = args.keys.as_deref()
+            .ok_or("--keys is required when using --mode sequence")?;
+        parse_sequence_targets(keys)?
+    } else {
+        Vec::new()
     };
 
     println!("======================================================");
@@ -322,6 +374,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ActionMode::RepeatHold => println!(
             "Repeated Hold      : hold {}ms, pause {}ms, repeat",
             args.interval, args.pause
+        ),
+        ActionMode::Sequence => println!(
+            "Sequence           : {} actions, {}ms between actions, repeat",
+            sequence_targets.len(), args.key_delay
         ),
     }
 
@@ -529,6 +585,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     _ => thread::sleep(Duration::from_millis(5)),
                 }
             }
+            ActionMode::Sequence => {
+                if !enabled {
+                    thread::sleep(Duration::from_millis(5));
+                    continue;
+                }
+
+                for sequence_target in &sequence_targets {
+                    if !*clicking_enabled.lock().unwrap()
+                        || !running_loop.load(Ordering::Relaxed)
+                    {
+                        break;
+                    }
+
+                    // Press the current key or mouse button.
+                    {
+                        let mut v_dev = virtual_device_loop.lock().unwrap();
+                        let _ = v_dev.emit(&[
+                            InputEvent::new(EventType::KEY.0, sequence_target.code.0, 1),
+                            InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0),
+                        ]);
+                    }
+                    thread::sleep(press_duration);
+
+                    // Always release each item before moving to the next one.
+                    {
+                        let mut v_dev = virtual_device_loop.lock().unwrap();
+                        let _ = v_dev.emit(&[
+                            InputEvent::new(EventType::KEY.0, sequence_target.code.0, 0),
+                            InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0),
+                        ]);
+                    }
+
+                    // Delay between actions (and between the end and start of cycles).
+                    let delay_end = Instant::now() + Duration::from_millis(args.key_delay);
+                    while Instant::now() < delay_end
+                        && *clicking_enabled.lock().unwrap()
+                        && running_loop.load(Ordering::Relaxed)
+                    {
+                        let remaining = delay_end.saturating_duration_since(Instant::now());
+                        thread::sleep(remaining.min(Duration::from_millis(5)));
+                    }
+                }
+            }
             ActionMode::Click => {
                 if enabled {
                     // Press
@@ -633,6 +732,8 @@ mod tests {
             target: None,
             mode: "click".to_string(),
             hold: false,
+            keys: None,
+            key_delay: 20,
         };
         let target = resolve_target(&args_default, "F6").unwrap();
         assert_eq!(target.kind, TargetKind::Mouse);
